@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Base64;
 import java.util.Date;
-import java.util.UUID;
 
 
 // Jwt Token 만드는 클래스
