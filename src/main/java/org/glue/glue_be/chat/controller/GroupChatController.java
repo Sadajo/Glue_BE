@@ -63,9 +63,9 @@ public class GroupChatController {
     // 그룹 채팅방 나가기
     @DeleteMapping("/rooms/{groupChatroomId}/leave")
     @Operation(summary = "채팅방 나가기")
-    public ResponseEntity<List<ActionResponse>> leaveChatRoom(@PathVariable Long groupChatroomId,
+    public ResponseEntity<GroupChatRoomLeaveResult> leaveChatRoom(@PathVariable Long groupChatroomId,
                                                               @AuthenticationPrincipal CustomUserDetails auth) {
-        List<ActionResponse> response = groupChatService.leaveGroupChatRoom(groupChatroomId, auth.getUserId());
+        GroupChatRoomLeaveResult response = groupChatService.leaveGroupChatRoom(groupChatroomId, auth.getUserId());
         return ResponseEntity.ok(response);
     }
 

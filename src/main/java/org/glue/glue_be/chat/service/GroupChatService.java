@@ -238,7 +238,7 @@ public class GroupChatService extends CommonChatService {
 
     // ===== 그룹 채팅방 나가기 =====
     @Transactional
-    public List<ActionResponse> leaveGroupChatRoom(Long groupChatroomId, Long userId) {
+    public GroupChatRoomLeaveResult leaveGroupChatRoom(Long groupChatroomId, Long userId) {
         try {
             GroupChatRoom chatRoom = getChatRoomById(groupChatroomId);
             User user = getUserById(userId);
@@ -249,9 +249,9 @@ public class GroupChatService extends CommonChatService {
                 throw new BaseException(ChatResponseStatus.HOST_CANNOT_LEAVE);
             }
 
-            processGroupMessage(groupChatroomId, null, userId, GroupMessage.LEAVE);
+            GroupMessageResponse groupMessageResponse = processGroupMessage(groupChatroomId, null, userId, GroupMessage.LEAVE);
 
-            return (List<ActionResponse>) processLeaveChatRoom(
+            List<ActionResponse> leaveResults = processLeaveChatRoom(
                     groupChatroomId,
                     userId,
                     this::getChatRoomById,
@@ -263,6 +263,11 @@ public class GroupChatService extends CommonChatService {
                     groupMessageRepository::deleteAll,
                     groupChatRoomRepository::delete
             );
+
+            ActionResponse systemMessage = new ActionResponse(GroupMessage.LEAVE, groupMessageResponse.message());
+
+            return new GroupChatRoomLeaveResult(leaveResults, systemMessage);
+
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
