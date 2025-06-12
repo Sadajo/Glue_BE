@@ -8,6 +8,8 @@ import org.glue.glue_be.chat.entity.dm.DmChatRoom;
 import org.glue.glue_be.chat.entity.dm.DmMessage;
 import org.glue.glue_be.chat.entity.dm.DmUserChatroom;
 import org.glue.glue_be.chat.dto.response.ChatResponseStatus;
+import org.glue.glue_be.chat.event.MessageCreatedEvent;
+import org.glue.glue_be.chat.event.MessageReadEvent;
 import org.glue.glue_be.chat.repository.dm.DmChatRoomRepository;
 import org.glue.glue_be.chat.repository.dm.DmMessageRepository;
 import org.glue.glue_be.chat.repository.dm.DmUserChatroomRepository;
@@ -21,6 +23,8 @@ import org.glue.glue_be.post.entity.Post;
 import org.glue.glue_be.post.repository.PostRepository;
 import org.glue.glue_be.user.entity.User;
 import org.glue.glue_be.util.fcm.dto.FcmSendDto;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.glue.glue_be.chat.mapper.DmResponseMapper;
@@ -47,6 +51,8 @@ public class DmChatService extends CommonChatService {
     private final PostRepository postRepository;
     private final FcmService fcmService;
 
+    private final ApplicationEventPublisher eventPublisher;
+
     // ===== 채팅방 생성 =====
     @Transactional
     public DmChatRoomCreateResult createDmChatRoom(DmChatRoomCreateRequest request, Long userId) {
@@ -66,11 +72,13 @@ public class DmChatService extends CommonChatService {
             }
 
             // 기존 채팅방 검색 - 있으면 바로 반환
-            Optional<DmChatRoom> existingChatRoom = dmChatRoomRepository.findDirectChatRoomByUserIds(meetingId, userIds.get(0), userIds.get(1));
+            Optional<DmChatRoom> existingChatRoom = dmChatRoomRepository.findDirectChatRoomByUserIds(meetingId,
+                    userIds.get(0), userIds.get(1));
             if (existingChatRoom.isPresent()) {
                 return new DmChatRoomCreateResult(
                         getDmChatRoomDetail(existingChatRoom.get().getId()),
-                        new ActionResponse(ChatResponseStatus.CHATROOM_FOUND.getCode(), ChatResponseStatus.CHATROOM_FOUND.getMessage())
+                        new ActionResponse(ChatResponseStatus.CHATROOM_FOUND.getCode(),
+                                ChatResponseStatus.CHATROOM_FOUND.getMessage())
                 );
             }
 
@@ -93,7 +101,8 @@ public class DmChatService extends CommonChatService {
             // 결과 반환
             return new DmChatRoomCreateResult(
                     getDmChatRoomDetail(chatRoom.getId()),
-                    new ActionResponse(ChatResponseStatus.CHATROOM_CREATED.getCode(), ChatResponseStatus.CHATROOM_CREATED.getMessage())
+                    new ActionResponse(ChatResponseStatus.CHATROOM_CREATED.getCode(),
+                            ChatResponseStatus.CHATROOM_CREATED.getMessage())
             );
         } catch (BaseException e) {
             throw e;
@@ -266,12 +275,15 @@ public class DmChatService extends CommonChatService {
                     pageSize,
                     userId,
                     this::getUserById,
-                    (user, pageable) -> dmUserChatroomRepository.findDmChatRoomsByUserOrderByUpdatedAtDesc(user.getUserId(), pageable),
-                    (user, curId, pageable) -> dmUserChatroomRepository.findDmChatRoomsByUserAndDmChatRoomIdLessThanOrderByUpdatedAtDesc(user.getUserId(), curId, pageable),
+                    (user, pageable) -> dmUserChatroomRepository.findDmChatRoomsByUserOrderByUpdatedAtDesc(
+                            user.getUserId(), pageable),
+                    (user, curId, pageable) -> dmUserChatroomRepository.findDmChatRoomsByUserAndDmChatRoomIdLessThanOrderByUpdatedAtDesc(
+                            user.getUserId(), curId, pageable),
                     (chatRooms, user) -> {
                         // 내가 호스트가 아닌 미팅의 DM 채팅방만 필터링 후 변환
                         List<DmChatRoom> filteredChatRooms = chatRooms.stream()
-                                .filter(dmChatRoom -> !dmChatRoom.getMeeting().getHost().getUserId().equals(user.getUserId()))
+                                .filter(dmChatRoom -> !dmChatRoom.getMeeting().getHost().getUserId()
+                                        .equals(user.getUserId()))
                                 .collect(Collectors.toList());
 
                         return convertToChatRoomResponses(filteredChatRooms, user);
@@ -300,7 +312,8 @@ public class DmChatService extends CommonChatService {
                             .orElse(null);
 
                     // 현재 사용자의 마지막 읽은 메시지 ID 조회
-                    Long currentUserLastReadMessageId = getCurrentUserLastReadMessageId(currentUser.getUserId(), chatRoom.getId());
+                    Long currentUserLastReadMessageId = getCurrentUserLastReadMessageId(currentUser.getUserId(),
+                            chatRoom.getId());
 
                     // 채팅방의 가장 최신 메시지 ID 조회
                     long latestMessageId = getLatestMessageId(chatRoom);
@@ -345,7 +358,8 @@ public class DmChatService extends CommonChatService {
     // ===== DM방 진입 시, 대화 이력 조회 + 안 읽었던 것들 읽음 처리(실시간+비실시간) =====
     // 대화 이력 조회 후 읽지 않은 메시지 읽음 처리
     @Transactional
-    public List<DmMessageResponse> getDmMessagesByDmChatRoomId(Long dmChatRoomId, Long cursorId, Integer pageSize, Long userId) {
+    public List<DmMessageResponse> getDmMessagesByDmChatRoomId(Long dmChatRoomId, Long cursorId, Integer pageSize,
+                                                               Long userId) {
         try {
             DmChatRoom dmChatRoom = getChatRoomById(dmChatRoomId);
             User user = getUserById(userId);
@@ -379,6 +393,9 @@ public class DmChatService extends CommonChatService {
                     this::getLatestMessageId,
                     dmUserChatroomRepository::updateLastReadMessageId
             );
+
+            eventPublisher.publishEvent(new MessageReadEvent(userId, dmChatRoomId, "DM"));
+
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
@@ -423,6 +440,9 @@ public class DmChatService extends CommonChatService {
             // 메시지 db에 저장
             DmMessageResponse response = saveDmMessage(dmChatRoom, sender, request.getContent());
 
+            // 채팅방 목록 업데이트 이벤트 발행
+            publishChatRoomListUpdateEvent(response, dmChatRoom.getId(), userId);
+
             // 메시지 전송 및 알림
             // 온라인: 웹소켓으로, 오프라인: 푸시알림으로
             broadcastMessage(dmChatRoomId, response, userId);
@@ -455,6 +475,18 @@ public class DmChatService extends CommonChatService {
         }
     }
 
+    // 채팅방 목록 업데이트 이벤트 발행
+    private void publishChatRoomListUpdateEvent(DmMessageResponse messageResponse, Long chatRoomId, Long senderId) {
+        eventPublisher.publishEvent(new MessageCreatedEvent(
+                messageResponse.getDmMessageId(),
+                chatRoomId,
+                senderId,
+                messageResponse.getContent(),
+                messageResponse.getCreatedAt(),
+                "DM"
+        ));
+    }
+
     // 알림 전송: 웹소켓(실시간) + 푸시(비실시간)
     private void broadcastMessage(Long chatroomId, DmMessageResponse messageResponse, Long senderId) {
         try {
@@ -464,7 +496,6 @@ public class DmChatService extends CommonChatService {
             if (messageOpt.isEmpty()) {
                 throw new BaseException(ChatResponseStatus.MESSAGE_NOT_FOUND);
             }
-
             DmMessage message = messageOpt.get();
             DmChatRoomDetailResponse chatRoom = getDmChatRoomDetail(chatroomId, Optional.ofNullable(senderId));
 
@@ -491,11 +522,19 @@ public class DmChatService extends CommonChatService {
                     DmUserChatroom::getUser,
                     DmUserChatroom::getPushNotificationOn,
                     this::isUserConnectedToWebSocket,
-                    (sender, recipient, content) -> FcmSendDto.builder()
-                            .title(sender.getNickname() + "님의 쪽지")
-                            .body(content)
-                            .token(recipient.getFcmToken())
-                            .build(),
+                    (sender, recipient, content) -> {
+                        String body = content.startsWith("[INVITATION]")
+                                ? "초대장이 도착했습니다"
+                                : content;
+
+                        return FcmSendDto.builder()
+                                .title(sender.getNickname() + "님의 쪽지")
+                                .body(body)
+                                .type("dm")
+                                .id(chatroomId)
+                                .token(recipient.getFcmToken())
+                                .build();
+                    },
                     fcmService::sendMessage
             );
         } catch (BaseException e) {

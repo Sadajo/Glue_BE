@@ -7,6 +7,8 @@ import org.glue.glue_be.chat.dto.response.*;
 import org.glue.glue_be.chat.entity.group.GroupChatRoom;
 import org.glue.glue_be.chat.entity.group.GroupMessage;
 import org.glue.glue_be.chat.entity.group.GroupUserChatRoom;
+import org.glue.glue_be.chat.event.MessageCreatedEvent;
+import org.glue.glue_be.chat.event.MessageReadEvent;
 import org.glue.glue_be.chat.mapper.GroupResponseMapper;
 import org.glue.glue_be.chat.repository.group.GroupChatRoomRepository;
 import org.glue.glue_be.chat.repository.group.GroupMessageRepository;
@@ -19,6 +21,7 @@ import org.glue.glue_be.meeting.entity.Meeting;
 import org.glue.glue_be.user.entity.User;
 import org.glue.glue_be.util.fcm.dto.FcmSendDto;
 import org.glue.glue_be.util.fcm.service.FcmService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +39,9 @@ public class GroupChatService extends CommonChatService {
     private final GroupResponseMapper responseMapper;
     private final FcmService fcmService;
 
+    private final ApplicationEventPublisher eventPublisher;
+
+
     // ===== 그룹 채팅방 생성 =====
     @Transactional
     public GroupChatRoomCreateResult createGroupChatRoom(Long meetingId, Long userId) {
@@ -52,8 +58,8 @@ public class GroupChatService extends CommonChatService {
             if (groupChatRoomRepository.existsByMeeting_MeetingId(meetingId)) {
                 // 기존 채팅방이 있으면 사용자만 추가
                 GroupChatRoom chatRoom = groupChatRoomRepository
-                    .findFirstByMeeting_MeetingId(meetingId)
-                    .orElseThrow(() -> new BaseException(ChatResponseStatus.CHATROOM_NOT_FOUND));
+                        .findFirstByMeeting_MeetingId(meetingId)
+                        .orElseThrow(() -> new BaseException(ChatResponseStatus.CHATROOM_NOT_FOUND));
 
                 // 이미 사용자가 채팅방에 참여 중인지 확인
                 Optional<GroupUserChatRoom> existingUserChatroom =
@@ -63,7 +69,8 @@ public class GroupChatService extends CommonChatService {
                     // 이미 참여 중이면 기존 채팅방 정보 반환
                     return new GroupChatRoomCreateResult(
                             getGroupChatRoomDetail(chatRoom.getGroupChatroomId(), userId),
-                            new ActionResponse(ChatResponseStatus.CHATROOM_JOINED.getCode(), ChatResponseStatus.CHATROOM_JOINED.getMessage())
+                            new ActionResponse(ChatResponseStatus.CHATROOM_JOINED.getCode(),
+                                    ChatResponseStatus.CHATROOM_JOINED.getMessage())
                     );
                 } else {
                     // 채팅방에 사용자 추가
@@ -72,7 +79,8 @@ public class GroupChatService extends CommonChatService {
 
                     return new GroupChatRoomCreateResult(
                             getGroupChatRoomDetail(chatRoom.getGroupChatroomId(), userId),
-                            new ActionResponse(ChatResponseStatus.CHATROOM_JOINED.getCode(), ChatResponseStatus.CHATROOM_JOINED.getMessage())
+                            new ActionResponse(ChatResponseStatus.CHATROOM_JOINED.getCode(),
+                                    ChatResponseStatus.CHATROOM_JOINED.getMessage())
                     );
                 }
             } else {
@@ -91,7 +99,8 @@ public class GroupChatService extends CommonChatService {
 
                 return new GroupChatRoomCreateResult(
                         getGroupChatRoomDetail(savedChatRoom.getGroupChatroomId(), userId),
-                        new ActionResponse(ChatResponseStatus.CHATROOM_CREATED.getCode(), ChatResponseStatus.CHATROOM_CREATED.getMessage())
+                        new ActionResponse(ChatResponseStatus.CHATROOM_CREATED.getCode(),
+                                ChatResponseStatus.CHATROOM_CREATED.getMessage())
                 );
             }
         } catch (BaseException e) {
@@ -179,8 +188,8 @@ public class GroupChatService extends CommonChatService {
                     pageSize,
                     userId,
                     this::getUserById,
-                    groupChatRoomRepository::findByUserOrderByGroupChatroomIdDesc,
-                    groupChatRoomRepository::findByUserAndGroupChatroomIdLessThanOrderByGroupChatroomIdDesc,
+                    groupChatRoomRepository::findByUserOrderByGroupChatroomUpdatedAtDesc,
+                    groupChatRoomRepository::findByUserAndGroupChatroomUpdatedAtLessThanOrderByGroupChatroomIdDesc,
                     this::convertToGroupChatRoomResponses
             );
         } catch (BaseException e) {
@@ -190,7 +199,8 @@ public class GroupChatService extends CommonChatService {
         }
     }
 
-    private List<GroupChatRoomListResponse> convertToGroupChatRoomResponses(List<GroupChatRoom> chatRooms, User currentUser) {
+    private List<GroupChatRoomListResponse> convertToGroupChatRoomResponses(List<GroupChatRoom> chatRooms,
+                                                                            User currentUser) {
         return chatRooms.stream()
                 .map(chatRoom -> {
                     // 참여자 수 계산
@@ -198,11 +208,13 @@ public class GroupChatService extends CommonChatService {
                     int participantCount = participants.size();
 
                     // 최근 메시지 조회
-                    GroupMessage lastMessage = groupMessageRepository.findTopByGroupChatroomOrderByCreatedAtDesc(chatRoom)
+                    GroupMessage lastMessage = groupMessageRepository.findTopByGroupChatroomOrderByCreatedAtDesc(
+                                    chatRoom)
                             .orElse(null);
 
                     // 현재 사용자의 마지막 읽은 메시지 ID 조회
-                    Long currentUserLastReadMessageId = getCurrentUserLastReadMessageId(currentUser.getUserId(), chatRoom.getGroupChatroomId());
+                    Long currentUserLastReadMessageId = getCurrentUserLastReadMessageId(currentUser.getUserId(),
+                            chatRoom.getGroupChatroomId());
 
                     // 채팅방의 가장 최신 메시지 ID 조회
                     long latestMessageId = lastMessage != null ? lastMessage.getGroupMessageId() : 0L;
@@ -255,7 +267,8 @@ public class GroupChatService extends CommonChatService {
     // ===== DM방 진입 시, 대화 이력 조회 + 안 읽었던 것들 읽음 처리(실시간+비실시간) =====
     // 대화 이력 조회 후 읽지 않은 메시지 읽음 처리
     @Transactional
-    public List<GroupMessageResponse> getGroupMessagesByGroupChatRoomId(Long groupChatroomId, Long cursorId, Integer pageSize, Long userId) {
+    public List<GroupMessageResponse> getGroupMessagesByGroupChatRoomId(Long groupChatroomId, Long cursorId,
+                                                                        Integer pageSize, Long userId) {
         try {
             GroupChatRoom groupChatRoom = getChatRoomById(groupChatroomId);
             User user = getUserById(userId);
@@ -289,6 +302,9 @@ public class GroupChatService extends CommonChatService {
                     this::getLatestMessageIdInChatRoom,
                     groupUserChatRoomRepository::updateLastReadMessageId
             );
+
+            eventPublisher.publishEvent(new MessageReadEvent(userId, groupChatroomId, "GROUP"));
+
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
@@ -323,7 +339,8 @@ public class GroupChatService extends CommonChatService {
 
     // ===== 그룹 메시지 전송 =====
     @Transactional
-    public GroupMessageResponse processGroupMessage(Long groupChatroomId, GroupMessageSendRequest request, Long userId) {
+    public GroupMessageResponse processGroupMessage(Long groupChatroomId, GroupMessageSendRequest request,
+                                                    Long userId) {
         try {
             GroupChatRoom groupChatRoom = getChatRoomById(groupChatroomId);
             User sender = getUserById(userId);
@@ -331,6 +348,9 @@ public class GroupChatService extends CommonChatService {
 
             // 메시지 db에 저장
             GroupMessageResponse response = saveGroupMessage(groupChatRoom, sender, request.content());
+
+            // 채팅방 목록 업데이트 이벤트 발행
+            publishChatRoomListUpdateEvent(response, groupChatroomId, userId);
 
             // 메시지 전송 및 알림
             // 온라인: 웹소켓으로, 오프라인: 푸시알림으로
@@ -356,10 +376,24 @@ public class GroupChatService extends CommonChatService {
             );
 
             GroupMessage savedMessage = groupMessageRepository.save(message);
+            chatRoom.updateLastActivity();
+
             return responseMapper.toMessageResponse(savedMessage);
         } catch (Exception e) {
             throw new BaseException(ChatResponseStatus.MESSAGE_SENDING_FAILED);
         }
+    }
+
+    // 채팅방 목록 업데이트 이벤트 발행
+    private void publishChatRoomListUpdateEvent(GroupMessageResponse messageResponse, Long chatRoomId, Long senderId) {
+        eventPublisher.publishEvent(new MessageCreatedEvent(
+                messageResponse.groupMessageId(),
+                chatRoomId,
+                senderId,
+                messageResponse.message(),
+                messageResponse.createdAt(),
+                "GROUP"
+        ));
     }
 
     // 온라인 유저에게 메시지 웹소켓으로 브로드캐스트, 오프라인 유저에겐 푸시 알림 전송
@@ -378,13 +412,7 @@ public class GroupChatService extends CommonChatService {
             // 모든 참여자에게 웹소켓 전송
             // 웹소켓에 연결된 사용자만 실제 수신
             // 오프라인 수신자는 받지도 않고 에러를 내지도 않고 그냥 무시
-            for (UserSummary participant : chatRoom.participants()) {
-                Long participantId = participant.getUserId();
-
-                if (!participantId.equals(senderId)) {
-                    messagingTemplate.convertAndSend("/topic/group/" + participantId, messageResponse);
-                }
-            }
+            messagingTemplate.convertAndSend("/topic/group/" + groupChatroomId, messageResponse);
 
             // 모든 오프라인 참여자에게 푸시 알림 전송
             sendPushNotificationsToOfflineReceivers(
@@ -401,6 +429,8 @@ public class GroupChatService extends CommonChatService {
                     (sender, recipient, content) -> FcmSendDto.builder()
                             .title(sender.getNickname() + "님의 그룹 메시지")
                             .body(content)
+                            .type("group")
+                            .id(groupChatroomId)
                             .token(recipient.getFcmToken())
                             .build(),
                     fcmService::sendMessage
