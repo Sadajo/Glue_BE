@@ -6,5 +6,5 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record GroupChatRoomCreateResult(
         GroupChatRoomDetailResponse chatroom,
         ActionResponse status,
-        ActionResponse joinLeaveMessage
+        ActionResponse joinMessage
 ) {}
