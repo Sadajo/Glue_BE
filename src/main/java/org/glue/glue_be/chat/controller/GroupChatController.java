@@ -90,7 +90,7 @@ public class GroupChatController {
             @RequestBody GroupMessageSendRequest request,
             @AuthenticationPrincipal CustomUserDetails auth) {
         GroupMessageResponse response = groupChatService.processGroupMessage(groupChatroomId, request,
-                auth.getUserId());
+                auth.getUserId(), null);
         return ResponseEntity.ok(response);
     }
 }
