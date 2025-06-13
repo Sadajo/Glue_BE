@@ -21,9 +21,15 @@ public class GroupChatController {
 
     private final GroupChatService groupChatService;
 
-    // 그룹 채팅방 침야
+    // 그룹 채팅방 참여
     @GetMapping("/rooms/create/{meetingId}")
-    @Operation(summary = "그룹 채팅방 참여")
+    @Operation(summary = "그룹 채팅방 참여",
+            description = """
+        **응답 설명:**
+        - 호스트가 아닌 사람의 신규 참여 시에만 포함됩니다.
+        - joinMessage.code: 항상 2
+        - joinMessage.message: @@@ 님이 참여했습니다
+        """)
     public ResponseEntity<GroupChatRoomCreateResult> createGroupChatRoom(@PathVariable Long meetingId,
                                                                          @AuthenticationPrincipal CustomUserDetails auth) {
         GroupChatRoomCreateResult result = groupChatService.createGroupChatRoom(meetingId, auth.getUserId());
@@ -62,10 +68,15 @@ public class GroupChatController {
 
     // 그룹 채팅방 나가기
     @DeleteMapping("/rooms/{groupChatroomId}/leave")
-    @Operation(summary = "채팅방 나가기")
-    public ResponseEntity<List<ActionResponse>> leaveChatRoom(@PathVariable Long groupChatroomId,
+    @Operation(summary = "채팅방 나가기",
+            description = """
+        **응답 설명:**
+        - leaveMessage.code: 항상 3
+        - leaveMessage.message: @@@ 님이 나갔습니다
+        """)
+    public ResponseEntity<GroupChatRoomLeaveResult> leaveChatRoom(@PathVariable Long groupChatroomId,
                                                               @AuthenticationPrincipal CustomUserDetails auth) {
-        List<ActionResponse> response = groupChatService.leaveGroupChatRoom(groupChatroomId, auth.getUserId());
+        GroupChatRoomLeaveResult response = groupChatService.leaveGroupChatRoom(groupChatroomId, auth.getUserId());
         return ResponseEntity.ok(response);
     }
 
@@ -90,7 +101,7 @@ public class GroupChatController {
             @RequestBody GroupMessageSendRequest request,
             @AuthenticationPrincipal CustomUserDetails auth) {
         GroupMessageResponse response = groupChatService.processGroupMessage(groupChatroomId, request,
-                auth.getUserId());
+                auth.getUserId(), null);
         return ResponseEntity.ok(response);
     }
 }

@@ -27,7 +27,9 @@ public enum ChatResponseStatus implements ResponseStatus {
     MESSAGE_SENDING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, false, 500, "메시지 전송에 실패하였습니다"),
     MESSAGES_READ_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, false, 500, "메시지 읽음 처리 실패하였습니다"),
     INVITATION_STATUS_ERROR(HttpStatus.BAD_REQUEST, false, 400, "초대 상태를 확인할 수 없습니다"),
-    RECIPIENT_USER_DELETED(HttpStatus.FORBIDDEN, false, 403, "탈퇴한 사용자와는 메시지를 주고받을 수 없습니다");
+    RECIPIENT_USER_DELETED(HttpStatus.FORBIDDEN, false, 403, "탈퇴한 사용자와는 메시지를 주고받을 수 없습니다"),
+    MESSAGE_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, false, 400, "메시지 내용이 필요합니다.");
+
 
     private final HttpStatusCode httpStatusCode;
     private final boolean success;
