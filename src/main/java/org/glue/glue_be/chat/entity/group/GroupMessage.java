@@ -17,6 +17,10 @@ public class GroupMessage extends BaseEntity {
 
     public static final int UNREAD_COUNT_DEFAULT = 1;
 
+    public static final int TEXT = 1;
+    public static final int JOIN = 2;
+    public static final int LEAVE = 3;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long groupMessageId;
@@ -36,12 +40,16 @@ public class GroupMessage extends BaseEntity {
     @Column(name = "message_content")
     private String message;
 
+    @Column(name = "message_type", nullable = false)
+    private Integer messageType = TEXT;
+
     // Constructor with required fields
-    public GroupMessage(User user, GroupChatRoom groupChatroom, Meeting meeting, String message) {
+    public GroupMessage(User user, GroupChatRoom groupChatroom, Meeting meeting, String message, Integer messageType) {
         this.user = user;
         this.groupChatroom = groupChatroom;
         this.meeting = meeting;
         this.message = message;
+        this.messageType = messageType;
     }
 
 }

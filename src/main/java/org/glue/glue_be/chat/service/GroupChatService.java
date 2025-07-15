@@ -70,17 +70,22 @@ public class GroupChatService extends CommonChatService {
                     return new GroupChatRoomCreateResult(
                             getGroupChatRoomDetail(chatRoom.getGroupChatroomId(), userId),
                             new ActionResponse(ChatResponseStatus.CHATROOM_JOINED.getCode(),
-                                    ChatResponseStatus.CHATROOM_JOINED.getMessage())
+                                    ChatResponseStatus.CHATROOM_JOINED.getMessage()),
+                            null
                     );
                 } else {
                     // 채팅방에 사용자 추가
                     GroupUserChatRoom groupUserChatRoom = new GroupUserChatRoom(user, chatRoom);
                     groupUserChatRoomRepository.save(groupUserChatRoom);
 
+                    GroupMessageResponse groupMessageResponse = processGroupMessage(chatRoom.getGroupChatroomId(), null, userId, GroupMessage.JOIN);
+
                     return new GroupChatRoomCreateResult(
                             getGroupChatRoomDetail(chatRoom.getGroupChatroomId(), userId),
                             new ActionResponse(ChatResponseStatus.CHATROOM_JOINED.getCode(),
-                                    ChatResponseStatus.CHATROOM_JOINED.getMessage())
+                                    ChatResponseStatus.CHATROOM_JOINED.getMessage()),
+                            new ActionResponse(GroupMessage.JOIN,
+                                    groupMessageResponse.message())
                     );
                 }
             } else {
@@ -100,7 +105,8 @@ public class GroupChatService extends CommonChatService {
                 return new GroupChatRoomCreateResult(
                         getGroupChatRoomDetail(savedChatRoom.getGroupChatroomId(), userId),
                         new ActionResponse(ChatResponseStatus.CHATROOM_CREATED.getCode(),
-                                ChatResponseStatus.CHATROOM_CREATED.getMessage())
+                                ChatResponseStatus.CHATROOM_CREATED.getMessage()),
+                        null
                 );
             }
         } catch (BaseException e) {
@@ -232,7 +238,7 @@ public class GroupChatService extends CommonChatService {
 
     // ===== 그룹 채팅방 나가기 =====
     @Transactional
-    public List<ActionResponse> leaveGroupChatRoom(Long groupChatroomId, Long userId) {
+    public GroupChatRoomLeaveResult leaveGroupChatRoom(Long groupChatroomId, Long userId) {
         try {
             GroupChatRoom chatRoom = getChatRoomById(groupChatroomId);
             User user = getUserById(userId);
@@ -243,7 +249,9 @@ public class GroupChatService extends CommonChatService {
                 throw new BaseException(ChatResponseStatus.HOST_CANNOT_LEAVE);
             }
 
-            return (List<ActionResponse>) processLeaveChatRoom(
+            GroupMessageResponse groupMessageResponse = processGroupMessage(groupChatroomId, null, userId, GroupMessage.LEAVE);
+
+            List<ActionResponse> leaveResults = processLeaveChatRoom(
                     groupChatroomId,
                     userId,
                     this::getChatRoomById,
@@ -255,6 +263,11 @@ public class GroupChatService extends CommonChatService {
                     groupMessageRepository::deleteAll,
                     groupChatRoomRepository::delete
             );
+
+            ActionResponse systemMessage = new ActionResponse(GroupMessage.LEAVE, groupMessageResponse.message());
+
+            return new GroupChatRoomLeaveResult(leaveResults, systemMessage);
+
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
@@ -340,14 +353,20 @@ public class GroupChatService extends CommonChatService {
     // ===== 그룹 메시지 전송 =====
     @Transactional
     public GroupMessageResponse processGroupMessage(Long groupChatroomId, GroupMessageSendRequest request,
-                                                    Long userId) {
+                                                    Long userId, Integer messageType) {
         try {
             GroupChatRoom groupChatRoom = getChatRoomById(groupChatroomId);
             User sender = getUserById(userId);
             validateChatRoomMember(groupChatRoom, sender);
 
+            if (messageType == null) {
+                messageType = GroupMessage.TEXT;
+            }
+
+            String messageContent = getMessageContent(request, messageType, sender);
+
             // 메시지 db에 저장
-            GroupMessageResponse response = saveGroupMessage(groupChatRoom, sender, request.content());
+            GroupMessageResponse response = saveGroupMessage(groupChatRoom, sender, messageContent, messageType);
 
             // 채팅방 목록 업데이트 이벤트 발행
             publishChatRoomListUpdateEvent(response, groupChatroomId, userId);
@@ -364,15 +383,29 @@ public class GroupChatService extends CommonChatService {
         }
     }
 
+    private String getMessageContent(GroupMessageSendRequest request, Integer messageType, User sender) {
+        if (messageType.equals(GroupMessage.JOIN)) {
+            return sender.getNickname() + " 님이 참여했습니다.";
+        } else if (messageType.equals(GroupMessage.LEAVE)) {
+            return sender.getNickname() + " 님이 나갔습니다.";
+        } else {
+            if (request == null || request.content() == null) {
+                throw new BaseException(ChatResponseStatus.MESSAGE_CONTENT_REQUIRED);
+            }
+            return request.content();
+        }
+    }
+
     // 메시지 db에 저장
-    private GroupMessageResponse saveGroupMessage(GroupChatRoom chatRoom, User sender, String content) {
+    private GroupMessageResponse saveGroupMessage(GroupChatRoom chatRoom, User sender, String content, Integer messageType) {
         try {
             // 메시지 생성 및 저장
             GroupMessage message = new GroupMessage(
                     sender,
                     chatRoom,
                     chatRoom.getMeeting(),
-                    content
+                    content,
+                    messageType
             );
 
             GroupMessage savedMessage = groupMessageRepository.save(message);
@@ -419,13 +452,13 @@ public class GroupChatService extends CommonChatService {
                     message,
                     groupChatRoom,
                     senderId,
-                    "/topic/group",
+                    "/topic/group/"+groupChatroomId,
                     GroupMessage::getMessage,
                     GroupMessage::getUser,
                     groupUserChatRoomRepository::findByGroupChatroom,
                     GroupUserChatRoom::getUser,
                     GroupUserChatRoom::getPushNotificationOn,
-                    this::isUserConnectedToWebSocket,
+                    this::isUserSubscribedToChat,
                     (sender, recipient, content) -> FcmSendDto.builder()
                             .title(sender.getNickname() + "님의 그룹 메시지")
                             .body(content)
