@@ -314,11 +314,9 @@ public class PostService {
 					.orElseThrow(() -> new BaseException(PostResponseStatus.POST_NOT_FOUND));
 				LocalDateTime cursorTime = Optional.ofNullable(cursor.getBumpedAt())
 					.orElse(cursor.getMeeting().getCreatedAt());
-				String cursorStr = new LocalDateTimeStringConverter()
-					.convertToDatabaseColumn(cursorTime);
 
 				result = postRepository.fetchNextPageByLanguage(
-					learnLang, cursorStr, lastPostId, limit
+					learnLang, cursorTime, lastPostId, limit
 				);
 			}
 
@@ -332,10 +330,8 @@ public class PostService {
 					.orElseThrow(() -> new BaseException(PostResponseStatus.POST_NOT_FOUND));
 				LocalDateTime cursorTime = Optional.ofNullable(cursor.getBumpedAt())
 					.orElse(cursor.getMeeting().getCreatedAt());
-				String cursorStr = new LocalDateTimeStringConverter()
-					.convertToDatabaseColumn(cursorTime);
 
-				result = postRepository.fetchNextPage(cursorStr, lastPostId, limit);
+				result = postRepository.fetchNextPage(cursorTime, lastPostId, limit);
 			}
 
 		} else {
@@ -348,11 +344,9 @@ public class PostService {
 					.orElseThrow(() -> new BaseException(PostResponseStatus.POST_NOT_FOUND));
 				LocalDateTime cursorTime = Optional.ofNullable(cursor.getBumpedAt())
 					.orElse(cursor.getMeeting().getCreatedAt());
-				String cursorStr = new LocalDateTimeStringConverter()
-					.convertToDatabaseColumn(cursorTime);
 
 				result = postRepository.fetchNextPageByCategory(
-					categoryId, cursorStr, lastPostId, limit
+					categoryId, cursorTime, lastPostId, limit
 				);
 			}
 		}
@@ -464,11 +458,8 @@ public class PostService {
 				? cursor.getBumpedAt()
 				: cursor.getMeeting().getCreatedAt();
 
-			String cursorTimeStampString =
-				new LocalDateTimeStringConverter().convertToDatabaseColumn(cursorTimeStamp);
-
 			result = postRepository.fetchNextPageByKeyword(
-				kw, cursorTimeStampString, lastPostId, limit
+				kw, cursorTimeStamp, lastPostId, limit
 			);
 		}
 
