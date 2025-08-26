@@ -32,22 +32,22 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
 
 	 // 카테고리 미지정 이후 스크롤은 커서 기준 이후 게시글들을 가져온다
-	 // cursorSortAt: 직전 페이지의 마지막 글의 sort 기준 시간(String type because of sqlite)
+	 // cursorSortAt: 직전 페이지의 마지막 글의 sort 기준 시간(String type because of sqlite -> postgresql로 바꾸면서 as timestamp 추가)
 	 // cursorPostId: 직전 페이지의 마지막 글 pk
-	@Query(value = """
-        SELECT  p.*
-        FROM    post p
-        JOIN    meeting m ON m.meeting_id = p.meeting_id
-        WHERE   (COALESCE(p.bumped_at, m.created_at) < :cursorSortAt)
-            OR (COALESCE(p.bumped_at, m.created_at) = :cursorSortAt AND p.post_id < :cursorPostId)
-        ORDER BY
-            COALESCE(p.bumped_at, m.created_at) DESC,
-            p.post_id DESC
-        LIMIT :limit
-        """, nativeQuery = true)
-	List<Post> fetchNextPage(@Param("cursorSortAt") String cursorSortAt,
-		@Param("cursorPostId") Long cursorPostId,
-		@Param("limit") int limit);
+	 @Query(value = """
+    SELECT  p.*
+    FROM    post p
+    JOIN    meeting m ON m.meeting_id = p.meeting_id
+    WHERE   (COALESCE(p.bumped_at, m.created_at) < CAST(:cursorSortAt AS timestamp))
+        OR (COALESCE(p.bumped_at, m.created_at) = CAST(:cursorSortAt AS timestamp) AND p.post_id < :cursorPostId)
+    ORDER BY
+        COALESCE(p.bumped_at, m.created_at) DESC,
+        p.post_id DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+	 List<Post> fetchNextPage(@Param("cursorSortAt") String cursorSortAt,
+		 @Param("cursorPostId") Long cursorPostId,
+		 @Param("limit") int limit);
 
 
     //  카테고리별 첫 페이지
@@ -66,21 +66,21 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     // ── 카테고리별 이후 페이지
     @Query(value = """
-        SELECT  p.*
-        FROM    post p
-        JOIN    meeting m ON m.meeting_id = p.meeting_id
-        WHERE   m.category_id = :categoryId
-          AND ((COALESCE(p.bumped_at, m.created_at) < :cursorSortAt)
-               OR (COALESCE(p.bumped_at, m.created_at) = :cursorSortAt AND p.post_id < :cursorPostId))
-        ORDER BY
-            COALESCE(p.bumped_at, m.created_at) DESC,
-            p.post_id DESC
-        LIMIT :limit
-        """, nativeQuery = true)
+    SELECT  p.*
+    FROM    post p
+    JOIN    meeting m ON m.meeting_id = p.meeting_id
+    WHERE   m.category_id = :categoryId
+      AND ((COALESCE(p.bumped_at, m.created_at) < CAST(:cursorSortAt AS timestamp))
+           OR (COALESCE(p.bumped_at, m.created_at) = CAST(:cursorSortAt AS timestamp) AND p.post_id < :cursorPostId))
+    ORDER BY
+        COALESCE(p.bumped_at, m.created_at) DESC,
+        p.post_id DESC
+    LIMIT :limit
+    """, nativeQuery = true)
     List<Post> fetchNextPageByCategory(@Param("categoryId") Integer categoryId,
-                                       @Param("cursorSortAt") String cursorSortAt,
-                                       @Param("cursorPostId") Long cursorPostId,
-                                       @Param("limit") int limit);
+	    @Param("cursorSortAt") String cursorSortAt,
+	    @Param("cursorPostId") Long cursorPostId,
+	    @Param("limit") int limit);
 
 
 	@Query("SELECT p FROM Post p WHERE p.meeting.host.userId = :hostUserId")
@@ -110,23 +110,23 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
 	// 2) 검색어 + 커서 기반 다음 페이지 조회
 	@Query(value = """
-        SELECT p.*
-        FROM   post p
-        JOIN   meeting m ON m.meeting_id = p.meeting_id
-        WHERE  
-          (p.post_title LIKE :kw OR p.content LIKE :kw)
-          AND (
-            COALESCE(p.bumped_at, m.created_at) < :cursorSortAt
-            OR (
-              COALESCE(p.bumped_at, m.created_at) = :cursorSortAt
-              AND p.post_id < :lastPostId
-            )
-          )
-        ORDER BY
-          COALESCE(p.bumped_at, m.created_at) DESC,
-          p.post_id DESC
-        LIMIT :limit
-        """, nativeQuery = true)
+    SELECT p.*
+    FROM   post p
+    JOIN   meeting m ON m.meeting_id = p.meeting_id
+    WHERE  
+      (p.post_title LIKE :kw OR p.content LIKE :kw)
+      AND (
+        COALESCE(p.bumped_at, m.created_at) < CAST(:cursorSortAt AS timestamp)
+        OR (
+          COALESCE(p.bumped_at, m.created_at) = CAST(:cursorSortAt AS timestamp)
+          AND p.post_id < :lastPostId
+        )
+      )
+    ORDER BY
+      COALESCE(p.bumped_at, m.created_at) DESC,
+      p.post_id DESC
+    LIMIT :limit
+    """, nativeQuery = true)
 	List<Post> fetchNextPageByKeyword(
 		@Param("kw")           String kw,
 		@Param("cursorSortAt") String cursorSortAt,
@@ -187,21 +187,21 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
 	// ② 토글 ON: 다음 페이지
 	@Query(value = """
-        SELECT p.* FROM post p
-        JOIN meeting m ON m.meeting_id = p.meeting_id
-        WHERE m.meeting_exchange_language_id = :langId
-          AND (
-            COALESCE(p.bumped_at, m.created_at) < :cursorSortAt
-            OR (
-              COALESCE(p.bumped_at, m.created_at) = :cursorSortAt
-              AND p.post_id < :cursorPostId
-            )
-          )
-        ORDER BY
-          COALESCE(p.bumped_at, m.created_at) DESC,
-          p.post_id DESC
-        LIMIT :limit
-        """, nativeQuery = true)
+    SELECT p.* FROM post p
+    JOIN meeting m ON m.meeting_id = p.meeting_id
+    WHERE m.meeting_exchange_language_id = :langId
+      AND (
+        COALESCE(p.bumped_at, m.created_at) < CAST(:cursorSortAt AS timestamp)
+        OR (
+          COALESCE(p.bumped_at, m.created_at) = CAST(:cursorSortAt AS timestamp)
+          AND p.post_id < :cursorPostId
+        )
+      )
+    ORDER BY
+      COALESCE(p.bumped_at, m.created_at) DESC,
+      p.post_id DESC
+    LIMIT :limit
+    """, nativeQuery = true)
 	List<Post> fetchNextPageByLanguage(
 		@Param("langId") Integer languageId,
 		@Param("cursorSortAt") String cursorSortAt,
